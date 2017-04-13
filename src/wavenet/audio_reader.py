@@ -156,8 +156,6 @@ class AudioReader(object):
         while not stop:
             iterator = load_generic_audio(self.audio_dir, self.sample_rate)
             for audio, filename, category_id in iterator:
-                print filename, category_id
-
                 if self.coord.should_stop():
                     stop = True
                     break
@@ -192,7 +190,6 @@ class AudioReader(object):
                     if self.gc_enabled:
                         sess.run(self.gc_enqueue,
                                  feed_dict={self.id_placeholder: category_id})
-            stop = True
 
     def start_threads(self, sess, n_threads=1):
         for _ in range(n_threads):

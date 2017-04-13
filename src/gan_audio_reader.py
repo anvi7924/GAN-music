@@ -52,12 +52,16 @@ def plot(samples):
 
 
 def create_audio_reader(args, coord):
+  # TODO Calculate receptive_field:
+  # receptive_field = WaveNetModel.calculate_receptive_field(...)
+  receptive_field = 1
+
   return AudioReader(
     args.audio_dir,
     coord,
     args.sample_rate,
     args.gc_enabled,
-    args.receptive_field,
+    receptive_field,
     # sample_size=None,
     # silence_threshold=None,
     # queue_size=32
@@ -151,7 +155,6 @@ def parse_args():
   parser.add_argument('--iters', type=int, default=1000000)
   parser.add_argument('--sample_rate', type=int, default=16000)
   parser.add_argument('--gc_enabled', action='store_true')
-  args.receptive_field,
 
   return parser.parse_args()
 
