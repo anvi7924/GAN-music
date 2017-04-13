@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 
+from src.wavenet.audio_reader import AudioReader
+from src.wavenet.model import WaveNetModel
 
 def xavier_init(size):
   in_dim = size[0]
@@ -47,6 +49,19 @@ def plot(samples):
     plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
 
   return fig
+
+
+def create_audio_reader(args, coord):
+  return AudioReader(
+    args.audio_dir,
+    coord,
+    args.sample_rate,
+    args.gc_enabled,
+    args.receptive_field,
+    # sample_size=None,
+    # silence_threshold=None,
+    # queue_size=32
+  )
 
 
 def main(args):
@@ -93,7 +108,7 @@ def main(args):
   mb_size = 128
   Z_dim = 100
 
-  mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
+  # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
 
   sess = tf.Session()
   sess.run(tf.global_variables_initializer())
@@ -101,19 +116,22 @@ def main(args):
   if not os.path.exists('out/'):
     os.makedirs('out/')
 
+  coord = tf.train.Coordinator()
+  audio_reader = create_audio_reader(args, coord)
+
   i = 0
-
   for it in range(args.iters):
-    if it % 1000 == 0:
-      samples = sess.run(G_sample, feed_dict={Z: sample_Z(16, Z_dim)})
+    # if it % 1000 == 0:
+    #   samples = sess.run(G_sample, feed_dict={Z: sample_Z(16, Z_dim)})
+    #
+    #   fig = plot(samples)
+    #   plt.savefig('out/{}.png'.format(str(i).zfill(3)), bbox_inches='tight')
+    #   i += 1
+    #   plt.close(fig)
 
-      fig = plot(samples)
-      plt.savefig('out/{}.png'.format(str(i).zfill(3)), bbox_inches='tight')
-      i += 1
-      plt.close(fig)
-
-    X_mb, _ = mnist.train.next_batch(mb_size)
-
+    # X_mb, _ = mnist.train.next_batch(mb_size)
+    X_mb = audio_reader.dequeue(mb_size)
+    
     _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(mb_size, Z_dim)})
     _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(mb_size, Z_dim)})
 
@@ -123,12 +141,20 @@ def main(args):
       print('G_loss: {:.4}'.format(G_loss_curr))
       print()
 
+  coord.request_stop()
+
 
 def parse_args():
   parser = argparse.ArgumentParser(description='Quick hack together of audio_reader + gan_tensorflow')
+  parser.add_argument('audio_dir',
+    help='Directory containing input WAV files')
   parser.add_argument('--iters', type=int, default=1000000)
+  parser.add_argument('--sample_rate', type=int, default=16000)
+  parser.add_argument('--gc_enabled', action='store_true')
+  args.receptive_field,
 
   return parser.parse_args()
+
 
 if __name__ == '__main__':
   args = parse_args()
