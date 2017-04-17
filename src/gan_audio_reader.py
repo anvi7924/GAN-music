@@ -9,6 +9,7 @@ import os
 
 from src.wavenet.audio_reader import AudioReader
 from src.wavenet.model import WaveNetModel
+from src.wavenet.ops import *
 
 def xavier_init(size):
   in_dim = size[0]
@@ -109,7 +110,6 @@ def main(args):
   D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list=theta_D)
   G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list=theta_G)
 
-  mb_size = 128
   Z_dim = 100
 
   # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
@@ -134,19 +134,55 @@ def main(args):
     #   plt.close(fig)
 
     # X_mb, _ = mnist.train.next_batch(mb_size)
-    X_mb = audio_reader.dequeue(mb_size)
-    
-    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(mb_size, Z_dim)})
-    _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(mb_size, Z_dim)})
+    X_mb = audio_reader.dequeue(args.batch_size)
+    input = encode(X_mb, args)
+    print(input)
+    # print('Before X_mb run')
+    # sess.run(X_mb)
+    # print('After X_mb run')
 
-    if it % 1000 == 0:
-      print('Iter: {}'.format(it))
-      print('D loss: {:.4}'.format(D_loss_curr))
-      print('G_loss: {:.4}'.format(G_loss_curr))
-      print()
+    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_dim)})
+    _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
+
+    # if it % 1000 == 0:
+    print('Iter: {}'.format(it))
+    print('D loss: {:.4}'.format(D_loss_curr))
+    print('G_loss: {:.4}'.format(G_loss_curr))
+    print()
 
   coord.request_stop()
 
+
+def _one_hot(input_batch, args):
+  '''One-hot encodes the waveform amplitudes.
+
+  This allows the definition of the network as a categorical distribution
+  over a finite set of possible amplitudes.
+  '''
+  with tf.name_scope('one_hot_encode'):
+    encoded = tf.one_hot(
+      input_batch,
+      depth=args.quantization_channels,
+      dtype=tf.float32)
+    shape = [args.batch_size, -1, args.quantization_channels]
+    encoded = tf.reshape(encoded, shape)
+  return encoded
+
+def encode(input_batch, args):
+  with tf.name_scope('wavenet'):
+    # We mu-law encode and quantize the input audioform.
+    encoded_input = mu_law_encode(input_batch,
+      args.quantization_channels)
+
+    # gc_embedding = self._embed_gc(global_condition_batch)
+    encoded = _one_hot(encoded_input, args)
+    # if self.scalar_input:
+    #   network_input = tf.reshape(
+    #     tf.cast(input_batch, tf.float32),
+    #     [self.batch_size, -1, 1])
+    # else:
+    #   network_input = encoded
+    return encoded
 
 def parse_args():
   parser = argparse.ArgumentParser(description='Quick hack together of audio_reader + gan_tensorflow')
@@ -154,7 +190,9 @@ def parse_args():
     help='Directory containing input WAV files')
   parser.add_argument('--iters', type=int, default=1000000)
   parser.add_argument('--sample_rate', type=int, default=16000)
+  parser.add_argument('--quantization_channels', type=int, default=256)
   parser.add_argument('--gc_enabled', action='store_true')
+  parser.add_argument('--batch_size', type=int, default=1)
 
   return parser.parse_args()
 
