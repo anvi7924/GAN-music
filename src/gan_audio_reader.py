@@ -69,6 +69,22 @@ def create_audio_reader(args, coord):
   )
 
 
+def next_audio_batch(audio_reader, sess, args):
+  audio_tensor = audio_reader.dequeue(args.batch_size)
+  # audio_tensor = encode(audio_tensor, args)
+
+  # print(audio_tensor)
+  audio_tensor = tf.reshape(audio_tensor, [args.batch_size, -1])
+  # print(audio_tensor)
+  audio_tensor = tf.slice(audio_tensor, [0, 0], [-1, 784])
+  # print(audio_tensor)
+
+  samples = sess.run(audio_tensor)
+  # print(samples)
+
+  return samples
+
+
 def main(args):
   X = tf.placeholder(tf.float32, shape=[None, 784])
 
@@ -123,23 +139,13 @@ def main(args):
   coord = tf.train.Coordinator()
   audio_reader = create_audio_reader(args, coord)
 
+  threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+  audio_reader.start_threads(sess, 1)
+
   i = 0
   for it in range(args.iters):
-    # if it % 1000 == 0:
-    #   samples = sess.run(G_sample, feed_dict={Z: sample_Z(16, Z_dim)})
-    #
-    #   fig = plot(samples)
-    #   plt.savefig('out/{}.png'.format(str(i).zfill(3)), bbox_inches='tight')
-    #   i += 1
-    #   plt.close(fig)
-
     # X_mb, _ = mnist.train.next_batch(mb_size)
-    X_mb = audio_reader.dequeue(args.batch_size)
-    input = encode(X_mb, args)
-    print(input)
-    # print('Before X_mb run')
-    # sess.run(X_mb)
-    # print('After X_mb run')
+    X_mb = next_audio_batch(audio_reader, sess, args)
 
     _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_dim)})
     _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
@@ -148,7 +154,7 @@ def main(args):
     print('Iter: {}'.format(it))
     print('D loss: {:.4}'.format(D_loss_curr))
     print('G_loss: {:.4}'.format(G_loss_curr))
-    print()
+    print('\n')
 
   coord.request_stop()
 
