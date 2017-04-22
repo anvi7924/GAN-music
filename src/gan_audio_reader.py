@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 
-from src.wavenet.audio_reader import AudioReader
-from src.wavenet.model import WaveNetModel
-from src.wavenet.ops import *
+from wavenet.audio_reader import AudioReader
+from wavenet.model import WaveNetModel
+from wavenet.ops import *
 
 def xavier_init(size):
   in_dim = size[0]
