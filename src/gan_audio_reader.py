@@ -71,12 +71,15 @@ def create_audio_reader(args, coord):
 
 def next_audio_batch(audio_reader, sess, args):
   audio_tensor = audio_reader.dequeue(args.batch_size)
-  # audio_tensor = encode(audio_tensor, args)
-
   # print(audio_tensor)
+
+  audio_tensor = encode(audio_tensor, args)
+  print(audio_tensor)
+
   audio_tensor = tf.reshape(audio_tensor, [args.batch_size, -1])
   # print(audio_tensor)
-  audio_tensor = tf.slice(audio_tensor, [0, 0], [-1, 784])
+
+  audio_tensor = tf.slice(audio_tensor, [0, 0], [-1, args.samples])
   # print(audio_tensor)
 
   samples = sess.run(audio_tensor)
@@ -86,9 +89,9 @@ def next_audio_batch(audio_reader, sess, args):
 
 
 def main(args):
-  X = tf.placeholder(tf.float32, shape=[None, 784])
+  X = tf.placeholder(tf.float32, shape=[None, args.samples])
 
-  D_W1 = tf.Variable(xavier_init([784, 128]))
+  D_W1 = tf.Variable(xavier_init([args.samples, 128]))
   D_b1 = tf.Variable(tf.zeros(shape=[128]))
 
   D_W2 = tf.Variable(xavier_init([128, 1]))
@@ -101,8 +104,8 @@ def main(args):
   G_W1 = tf.Variable(xavier_init([100, 128]))
   G_b1 = tf.Variable(tf.zeros(shape=[128]))
 
-  G_W2 = tf.Variable(xavier_init([128, 784]))
-  G_b2 = tf.Variable(tf.zeros(shape=[784]))
+  G_W2 = tf.Variable(xavier_init([128, args.samples]))
+  G_b2 = tf.Variable(tf.zeros(shape=[args.samples]))
 
   theta_G = [G_W1, G_W2, G_b1, G_b2]
 
@@ -120,6 +123,7 @@ def main(args):
   D_loss_fake = tf.reduce_mean(
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.zeros_like(D_logit_fake)))
   D_loss = D_loss_real + D_loss_fake
+
   G_loss = tf.reduce_mean(
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.ones_like(D_logit_fake)))
 
@@ -196,11 +200,18 @@ def parse_args():
     help='Directory containing input WAV files')
   parser.add_argument('--iters', type=int, default=1000000)
   parser.add_argument('--sample_rate', type=int, default=16000)
+  parser.add_argument('--file_seconds', help='Number of audio seconds to use from each input file',
+    type=int, default=29)
   parser.add_argument('--quantization_channels', type=int, default=256)
   parser.add_argument('--gc_enabled', action='store_true')
   parser.add_argument('--batch_size', type=int, default=1)
 
-  return parser.parse_args()
+  args = parser.parse_args()
+
+  args.samples = args.file_seconds * args.sample_rate
+  print('Extracting %s samples per file' % args.samples)
+
+  return args
 
 
 if __name__ == '__main__':
