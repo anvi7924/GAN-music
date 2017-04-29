@@ -1,12 +1,14 @@
 import tensorflow as tf
 from wavenet.audio_reader import AudioReader
+from wavenet.model import WaveNetModel
 from wavenet.ops import mu_law_encode
 
 class GanAudioReader(object):
 
-  def __init__(self, args, sess):
+  def __init__(self, args, sess, wavenet_params):
     self.args = args
     self.sess = sess
+    self.wavenet_params = wavenet_params
     self.coord = tf.train.Coordinator()
 
     self.audio_reader = self._create_audio_reader()
@@ -17,8 +19,12 @@ class GanAudioReader(object):
 
   def _create_audio_reader(self):
     # TODO Calculate receptive_field:
-    # receptive_field = WaveNetModel.calculate_receptive_field(...)
-    receptive_field = 1
+    receptive_field = WaveNetModel.calculate_receptive_field(self.wavenet_params["filter_width"],
+      self.wavenet_params["dilations"],
+      self.wavenet_params["scalar_input"],
+      self.wavenet_params["initial_filter_width"]
+    )
+    # receptive_field = 1
 
     return AudioReader(
       self.args.audio_dir,
@@ -26,14 +32,14 @@ class GanAudioReader(object):
       self.args.sample_rate,
       self.args.gc_enabled,
       receptive_field,
-      # sample_size=None,
-      # silence_threshold=None,
-      # queue_size=32
+      sample_size=self.args.sample_size,
+      silence_threshold=self.args.silence_threshold,
+      queue_size=32
     )
 
 
   def next_audio_batch(self):
-    audio_tensor = self.audio_reader.dequeue(self.args.batch_size)
+    audio_tensor = self.dequeue()
     # print(audio_tensor)
 
     audio_tensor = self._encode(audio_tensor)
@@ -49,6 +55,10 @@ class GanAudioReader(object):
     # print(samples)
 
     return samples
+
+
+  def dequeue(self):
+    return self.audio_reader.dequeue(self.args.batch_size)
 
 
   def _one_hot(self, input_batch):

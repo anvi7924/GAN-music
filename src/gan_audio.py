@@ -1,4 +1,5 @@
 import argparse
+import json
 
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
@@ -10,6 +11,7 @@ import os
 from gan_audio_reader import GanAudioReader
 from wavenet.model import WaveNetModel
 from wavenet.ops import *
+
 
 def xavier_init(size):
   in_dim = size[0]
@@ -52,6 +54,30 @@ def plot(samples):
   return fig
 
 
+def create_wavenet(args, wavenet_params):
+  # Create network.
+  net = WaveNetModel(
+    batch_size=args.batch_size,
+    dilations=wavenet_params["dilations"],
+    filter_width=wavenet_params["filter_width"],
+    residual_channels=wavenet_params["residual_channels"],
+    dilation_channels=wavenet_params["dilation_channels"],
+    skip_channels=wavenet_params["skip_channels"],
+    quantization_channels=wavenet_params["quantization_channels"],
+    use_biases=wavenet_params["use_biases"],
+    scalar_input=wavenet_params["scalar_input"],
+    initial_filter_width=wavenet_params["initial_filter_width"],
+    # histograms=args.histograms,
+    # global_condition_channels=args.gc_channels,
+    # global_condition_cardinality=reader.gc_category_cardinality)
+  )
+
+  if args.l2_regularization_strength == 0:
+    args.l2_regularization_strength = None
+
+  return net
+
+
 def main(args):
   X = tf.placeholder(tf.float32, shape=[None, args.samples])
 
@@ -86,20 +112,56 @@ def main(args):
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_real, labels=tf.ones_like(D_logit_real)))
   D_loss_fake = tf.reduce_mean(
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.zeros_like(D_logit_fake)))
-  D_loss = D_loss_real + D_loss_fake
+  # D_loss = D_loss_real + D_loss_fake
+
+  ###
+  # Start WaveNet stuff
+  ###
+  sess = tf.Session()
+  sess.run(tf.global_variables_initializer())
+
+  with open(args.wavenet_params, 'r') as f:
+    wavenet_params = json.load(f)
+
+  audio_reader = GanAudioReader(args, sess, wavenet_params)
+  net = create_wavenet(args, wavenet_params)
+  audio_batch = audio_reader.dequeue()
+  D_loss = net.loss(input_batch=audio_batch,
+    # global_condition_batch=gc_id_batch,
+    l2_regularization_strength=args.l2_regularization_strength)
+  ###
+  # End WaveNet stuff
+  ###
 
   G_loss = tf.reduce_mean(
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.ones_like(D_logit_fake)))
 
-  D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list=theta_D)
+  # D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list=theta_D)
+  ### From WaveNet train.py:
+  # optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
+  #   epsilon=1e-4)
+  #
+  # optimizer = optimizer(
+  #   learning_rate=args.learning_rate,
+  #   momentum=args.momentum)
+  # trainable = tf.trainable_variables()
+  # optim = optimizer.minimize(loss, var_list=trainable)
+  ###
+  optimizer = tf.train.AdamOptimizer(
+    learning_rate=args.learning_rate,
+    epsilon=1e-4
+  )
+  trainable = tf.trainable_variables()
+
+  print("About to create D_solver")
+  D_solver = optimizer.minimize(D_loss, var_list=trainable)
+
+  print("About to create G_solver")
   G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list=theta_G)
 
   Z_dim = 100
 
   # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
-
-  sess = tf.Session()
-  sess.run(tf.global_variables_initializer())
 
   # if not os.path.exists('out/'):
   #   os.makedirs('out/')
@@ -110,14 +172,13 @@ def main(args):
   # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
   # audio_reader.start_threads(sess, 1)
 
-  audio_reader = GanAudioReader(args, sess)
-
   i = 0
   for it in range(args.iters):
     # X_mb, _ = mnist.train.next_batch(mb_size)
-    X_mb = audio_reader.next_audio_batch()
+    # X_mb = audio_reader.next_audio_batch()
 
-    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_dim)})
+    # _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_dim)})
+    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
     _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
 
     # if it % 1000 == 0:
@@ -128,6 +189,17 @@ def main(args):
 
   audio_reader.done()
 
+
+LEARNING_RATE = 1e-3
+WAVENET_PARAMS = '../config/wavenet_params.json'
+# STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
+SAMPLE_SIZE = 100000
+L2_REGULARIZATION_STRENGTH = 0
+SILENCE_THRESHOLD = 0.01
+# EPSILON = 0.001
+MOMENTUM = 0.9
+# MAX_TO_KEEP = 5
+# METADATA = False
 
 
 def parse_args():
@@ -141,6 +213,21 @@ def parse_args():
   parser.add_argument('--quantization_channels', type=int, default=256)
   parser.add_argument('--gc_enabled', action='store_true')
   parser.add_argument('--batch_size', type=int, default=1)
+  parser.add_argument('--learning_rate', type=float, default=LEARNING_RATE,
+    help='Learning rate for training. Default: ' + str(LEARNING_RATE) + '.')
+  parser.add_argument('--wavenet_params', type=str, default=WAVENET_PARAMS,
+    help='JSON file with the network parameters. Default: ' + WAVENET_PARAMS + '.')
+  parser.add_argument('--sample_size', type=int, default=SAMPLE_SIZE,
+    help='Concatenate and cut audio samples to this many '
+         'samples. Default: ' + str(SAMPLE_SIZE) + '.')
+  parser.add_argument('--l2_regularization_strength', type=float,
+    default=L2_REGULARIZATION_STRENGTH,
+    help='Coefficient in the L2 regularization. '
+         'Default: False')
+  parser.add_argument('--silence_threshold', type=float,
+    default=SILENCE_THRESHOLD,
+    help='Volume threshold below which to trim the start '
+         'and the end from the training set samples. Default: ' + str(SILENCE_THRESHOLD) + '.')
 
   args = parser.parse_args()
 
