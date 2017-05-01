@@ -32,30 +32,6 @@ def discriminator(x, D_W1, D_b1, D_W2, D_b2):
   return tf.matmul(D_h1, D_W2) + D_b2
 
 
-def create_wavenet(args, wavenet_params):
-  # Create network.
-  net = WaveNetModel(
-    batch_size=args.batch_size,
-    dilations=wavenet_params["dilations"],
-    filter_width=wavenet_params["filter_width"],
-    residual_channels=wavenet_params["residual_channels"],
-    dilation_channels=wavenet_params["dilation_channels"],
-    skip_channels=wavenet_params["skip_channels"],
-    quantization_channels=wavenet_params["quantization_channels"],
-    use_biases=wavenet_params["use_biases"],
-    scalar_input=wavenet_params["scalar_input"],
-    initial_filter_width=wavenet_params["initial_filter_width"],
-    # histograms=args.histograms,
-    # global_condition_channels=args.gc_channels,
-    # global_condition_cardinality=reader.gc_category_cardinality)
-  )
-
-  if args.l2_regularization_strength == 0:
-    args.l2_regularization_strength = None
-
-  return net
-
-
 def main(args):
   with open(args.wavenet_params, 'r') as f:
     receptive_field = calculate_receptive_field(json.load(f))
