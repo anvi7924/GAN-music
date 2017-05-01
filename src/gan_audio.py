@@ -40,6 +40,59 @@ def make_layer(in_dim, out_dim):
   return W, b
 
 
+class RecGen():
+  def __init__(self, total_sample_size, z_dim, hidden_dim, time_steps=5):
+    #self.encoder_Z_W, self.encoder_Z_b = make_layer()
+    self.encoder_W1, self.encoder_b1 = make_layer(total_sample_size, hidden_dim)
+    self.encoder_W2, self.encoder_b2 = make_layer(hidden_dim, hidden_dim)
+    self.encoder_W3, self.encoder_b3 = make_layer(hidden_dim, hidden_dim)
+
+    self.decoder_Z_W, self.decoder_Z_b = make_layer(z_dim, hidden_dim)
+    self.decoder_W1, self.decoder_b1 = make_layer(2 * hidden_dim, 2 * hidden_dim)
+    self.decoder_W2, self.decoder_b2 = make_layer(2 * hidden_dim, 2 * hidden_dim)
+    self.decoder_W3, self.decoder_b3 = make_layer(2 * hidden_dim, total_sample_size)
+
+    self.theta = [
+        self.encoder_W1, self.encoder_b1,
+        self.encoder_W2, self.encoder_b2,
+        self.encoder_W3, self.encoder_b3,
+        self.decoder_Z_W, self.decoder_Z_b,
+        self.decoder_W1, self.decoder_b1,
+        self.decoder_W2, self.decoder_b2,
+        self.decoder_W3, self.decoder_b3
+        ]
+
+
+    self.Z = tf.placeholder(tf.float32, shape=[None, z_dim])
+    # canvases is list of (Ct, H_Ct) with length time_steps
+    canvases = [[None, None] for _ in range(time_steps)]
+    canvases[0][1] = tf.zeros((1, hidden_dim))
+    for i in range(time_steps - 1):
+      canvases[i][0] = self.forward(canvases[i][1])
+      canvases[i + 1][1] = self.backward(canvases[i][0])
+    self.sample = tf.add_n([ct for ct, _ in canvases[:time_steps - 1]])
+
+
+  def forward(self, H_Ct):
+    '''Runs the decoder.'''
+    h0 = tf.nn.tanh(tf.matmul(self.Z, self.decoder_Z_W) + self.decoder_Z_b)
+    r = tf.concat([h0, H_Ct], 1)
+    h1 = tf.nn.relu(tf.matmul(r, self.decoder_W1) + self.decoder_b1)
+    h2 = tf.nn.relu(tf.matmul(h1, self.decoder_W2) + self.decoder_b2)
+    return tf.tanh(tf.matmul(h2, self.decoder_W3) + self.decoder_b3)
+
+
+  def backward(self, Ct):
+    '''Runs the encoder.'''
+    h0 = tf.nn.relu(tf.matmul(Ct, self.encoder_W1) + self.encoder_b1)
+    h1 = tf.nn.relu(tf.matmul(h0, self.encoder_W2) + self.encoder_b2)
+    return tf.tanh(tf.matmul(h1, self.encoder_W3) + self.encoder_b3)
+
+
+#  def get_samples(self, sess, Z):
+#    return sess.run([self.sample], feed_dict={self.Z: Z})
+
+
 def main(args):
   with open(args.wavenet_params, 'r') as f:
     receptive_field = calculate_receptive_field(json.load(f))
@@ -57,17 +110,18 @@ def main(args):
 
   theta_D = [D_W1, D_W2, D_W3, D_b1, D_b2, D_b3]
 
-  Z = tf.placeholder(tf.float32, shape=[None, Z_DIM])
+  #Z = tf.placeholder(tf.float32, shape=[None, Z_DIM])
 
-  G_W1, G_b1 = make_layer(Z_DIM, HIDDEN_DIM)
-  G_W2, G_b2 = make_layer(HIDDEN_DIM, HIDDEN_DIM)
-  G_W3, G_b3 = make_layer(HIDDEN_DIM, total_sample_size)
-
-  theta_G = [G_W1, G_W2, G_W3, G_b1, G_b2, G_b3]
-
-  G_sample = generator(Z, G_W1, G_b1, G_W2, G_b2, G_W3, G_b3)
+  G = RecGen(total_sample_size, Z_DIM, HIDDEN_DIM)
+#  G_W1, G_b1 = make_layer(Z_DIM, HIDDEN_DIM)
+#  G_W2, G_b2 = make_layer(HIDDEN_DIM, HIDDEN_DIM)
+#  G_W3, G_b3 = make_layer(HIDDEN_DIM, total_sample_size)
+#
+#  theta_G = [G_W1, G_W2, G_W3, G_b1, G_b2, G_b3]
+#
+#  G_sample = generator(Z, G_W1, G_b1, G_W2, G_b2, G_W3, G_b3)
   D_real = discriminator(X, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3)
-  D_fake = discriminator(G_sample, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3)
+  D_fake = discriminator(G.sample, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3)
 
   D_loss = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
   G_loss = -tf.reduce_mean(D_fake)
@@ -78,7 +132,7 @@ def main(args):
 
   print('Creating G_solver')
   G_solver = tf.train.RMSPropOptimizer(
-      learning_rate=args.learning_rate).minimize(G_loss, var_list=theta_G)
+      learning_rate=args.learning_rate).minimize(G_loss, var_list=G.theta)
 
   D_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in theta_D]
 
@@ -87,7 +141,7 @@ def main(args):
 
   audio_reader = GanAudioReader(args, sess, receptive_field)
 
-  G_decode = mu_law_decode(tf.to_int32(G_sample * args.quantization_channels),
+  G_decode = mu_law_decode(tf.to_int32(G.sample * args.quantization_channels),
       args.quantization_channels)
 
   for it in range(args.iters):
@@ -99,17 +153,17 @@ def main(args):
       X_mb = X_mb.reshape([1, total_sample_size])
 
       _, D_loss_curr, _ = sess.run([D_solver, D_loss, D_clip],
-          feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_DIM)})
+          feed_dict={X: X_mb, G.Z: sample_Z(args.batch_size, Z_DIM)})
 
     _, G_loss_curr = sess.run([G_solver, G_loss],
-        feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+        feed_dict={G.Z: sample_Z(args.batch_size, Z_DIM)})
 
     if it % 10 == 0:
       print('Iter: {}\nD_loss: {:.4}\nG_loss: {:.4}\n'.format(
         it, D_loss_curr, G_loss_curr))
       if it % 200 == 0:
-        samples, decoded = sess.run([G_sample, G_decode],
-            feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+        samples, decoded = sess.run([G.sample, G_decode],
+            feed_dict={G.Z: sample_Z(args.batch_size, Z_DIM)})
         with open('output_{}'.format(it), 'w') as f:
           f.write(','.join(str(sample) for sample in samples[0]))
           f.write('\n')
