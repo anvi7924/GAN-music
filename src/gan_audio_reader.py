@@ -38,9 +38,9 @@ class GanAudioReader(object):
 
     audio_tensor = tf.reshape(audio_tensor, [-1])
 
-#    audio_tensor = self._encode(audio_tensor)
-#    # print(audio_tensor)
-#
+    audio_tensor = self._encode(audio_tensor)
+    # print(audio_tensor)
+
 #    audio_tensor = tf.reshape(audio_tensor, [self.args.batch_size, -1])
 #    # print(audio_tensor)
 #
@@ -80,16 +80,18 @@ class GanAudioReader(object):
       # We mu-law encode and quantize the input audioform.
       encoded_input = mu_law_encode(input_batch,
         self.args.quantization_channels)
+      return tf.to_float(encoded_input) / self.args.quantization_channels
+      #return encoded_input
 
-      # gc_embedding = self._embed_gc(global_condition_batch)
-      encoded = self._one_hot(encoded_input)
-      # if self.scalar_input:
-      #   network_input = tf.reshape(
-      #     tf.cast(input_batch, tf.float32),
-      #     [self.batch_size, -1, 1])
-      # else:
-      #   network_input = encoded
-      return encoded
+#      # gc_embedding = self._embed_gc(global_condition_batch)
+#      encoded = self._one_hot(encoded_input)
+#      # if self.scalar_input:
+#      #   network_input = tf.reshape(
+#      #     tf.cast(input_batch, tf.float32),
+#      #     [self.batch_size, -1, 1])
+#      # else:
+#      #   network_input = encoded
+#      return encoded
 
 
   def done(self):

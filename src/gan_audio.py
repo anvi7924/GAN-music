@@ -83,6 +83,9 @@ def main(args):
 
   audio_reader = GanAudioReader(args, sess, receptive_field)
 
+  G_decode = mu_law_decode(tf.to_int32(G_sample * args.quantization_channels),
+      args.quantization_channels)
+
   for it in range(args.iters):
     for _ in range(5):
       X_mb = audio_reader.next_audio_batch()
@@ -90,7 +93,6 @@ def main(args):
         X_mb = np.pad(X_mb, ((0, total_sample_size - len(X_mb))), 'constant',
             constant_values=0.)
       X_mb = X_mb.reshape([1, total_sample_size])
-      #import pdb; pdb.set_trace()
 
       _, D_loss_curr, _ = sess.run([D_solver, D_loss, D_clip],
           feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_DIM)})
@@ -101,11 +103,13 @@ def main(args):
     if it % 10 == 0:
       print('Iter: {}\nD_loss: {:.4}\nG_loss: {:.4}\n'.format(
         it, D_loss_curr, G_loss_curr))
-      if it % 200 == 0:
-        samples = sess.run([G_sample],
+      if it % 10 == 0:
+        samples, decoded = sess.run([G_sample, G_decode],
             feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
         with open('output_{}'.format(it), 'w') as f:
-          f.write(','.join(str(sample) for sample in samples[0][0]))
+          f.write(','.join(str(sample) for sample in samples[0]))
+          f.write('\n')
+          f.write(','.join(str(sample) for sample in decoded[0]))
       #import pdb; pdb.set_trace()
 
   audio_reader.done()
