@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 
-from gan_audio_reader import GanAudioReader
+from gan_audio_reader import GanAudioReader, calculate_receptive_field
 from wavenet.model import WaveNetModel
 from wavenet.ops import *
 
@@ -18,6 +18,7 @@ def xavier_init(size):
   xavier_stddev = 1. / tf.sqrt(in_dim / 2.)
   return tf.random_normal(shape=size, stddev=xavier_stddev)
 
+
 def sample_Z(m, n):
   return np.random.uniform(-1., 1., size=[m, n])
 
@@ -25,17 +26,12 @@ def sample_Z(m, n):
 def generator(z, G_W1, G_b1, G_W2, G_b2):
   G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
   G_log_prob = tf.matmul(G_h1, G_W2) + G_b2
-  G_prob = tf.nn.sigmoid(G_log_prob)
-
-  return G_prob
+  return tf.nn.sigmoid(G_log_prob)
 
 
 def discriminator(x, D_W1, D_b1, D_W2, D_b2):
   D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
-  D_logit = tf.matmul(D_h1, D_W2) + D_b2
-  D_prob = tf.nn.sigmoid(D_logit)
-
-  return D_prob, D_logit
+  return tf.matmul(D_h1, D_W2) + D_b2
 
 
 def plot(samples):
@@ -79,118 +75,82 @@ def create_wavenet(args, wavenet_params):
 
 
 def main(args):
-  X = tf.placeholder(tf.float32, shape=[None, args.samples])
+  with open(args.wavenet_params, 'r') as f:
+    receptive_field = calculate_receptive_field(json.load(f))
+  total_sample_size = receptive_field + args.sample_size
+  print('total_sample_size: {}'.format(total_sample_size))
 
-  D_W1 = tf.Variable(xavier_init([args.samples, 128]))
-  D_b1 = tf.Variable(tf.zeros(shape=[128]))
+  HIDDEN_DIM = 1024
+  Z_DIM = 100
 
-  D_W2 = tf.Variable(xavier_init([128, 1]))
+  X = tf.placeholder(tf.float32, shape=[None, total_sample_size])
+
+  D_W1 = tf.Variable(xavier_init([total_sample_size, HIDDEN_DIM]))
+  D_b1 = tf.Variable(tf.zeros(shape=[HIDDEN_DIM]))
+
+  D_W2 = tf.Variable(xavier_init([HIDDEN_DIM, 1]))
   D_b2 = tf.Variable(tf.zeros(shape=[1]))
 
   theta_D = [D_W1, D_W2, D_b1, D_b2]
 
-  Z = tf.placeholder(tf.float32, shape=[None, 100])
+  Z = tf.placeholder(tf.float32, shape=[None, Z_DIM])
 
-  G_W1 = tf.Variable(xavier_init([100, 128]))
-  G_b1 = tf.Variable(tf.zeros(shape=[128]))
+  G_W1 = tf.Variable(xavier_init([Z_DIM, HIDDEN_DIM]))
+  G_b1 = tf.Variable(tf.zeros(shape=[HIDDEN_DIM]))
 
-  G_W2 = tf.Variable(xavier_init([128, args.samples]))
-  G_b2 = tf.Variable(tf.zeros(shape=[args.samples]))
+  G_W2 = tf.Variable(xavier_init([HIDDEN_DIM, total_sample_size]))
+  G_b2 = tf.Variable(tf.zeros(shape=[total_sample_size]))
 
   theta_G = [G_W1, G_W2, G_b1, G_b2]
 
   G_sample = generator(Z, G_W1, G_b1, G_W2, G_b2)
-  D_real, D_logit_real = discriminator(X, D_W1, D_b1, D_W2, D_b2)
-  D_fake, D_logit_fake = discriminator(G_sample, D_W1, D_b1, D_W2, D_b2)
+  D_real = discriminator(X, D_W1, D_b1, D_W2, D_b2)
+  D_fake = discriminator(G_sample, D_W1, D_b1, D_W2, D_b2)
 
-  # D_loss = -tf.reduce_mean(tf.log(D_real) + tf.log(1. - D_fake))
-  # G_loss = -tf.reduce_mean(tf.log(D_fake))
+  D_loss = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
+  G_loss = -tf.reduce_mean(D_fake)
 
-  # Alternative losses:
-  # -------------------
-  D_loss_real = tf.reduce_mean(
-    tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_real, labels=tf.ones_like(D_logit_real)))
-  D_loss_fake = tf.reduce_mean(
-    tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.zeros_like(D_logit_fake)))
-  # D_loss = D_loss_real + D_loss_fake
+  print('Creating D_solver')
+  D_solver = tf.train.RMSPropOptimizer(
+      learning_rate=args.learning_rate).minimize(-D_loss, var_list=theta_D)
 
-  ###
-  # Start WaveNet stuff
-  ###
+  print('Creating G_solver')
+  G_solver = tf.train.RMSPropOptimizer(
+      learning_rate=args.learning_rate).minimize(G_loss, var_list=theta_G)
+
+  D_clip = [v.assign(tf.clip_by_value(v, -0.01, 0.01)) for v in theta_D]
+
   sess = tf.Session()
   sess.run(tf.global_variables_initializer())
 
-  with open(args.wavenet_params, 'r') as f:
-    wavenet_params = json.load(f)
+  audio_reader = GanAudioReader(args, sess, receptive_field)
 
-  audio_reader = GanAudioReader(args, sess, wavenet_params)
-  net = create_wavenet(args, wavenet_params)
-  audio_batch = audio_reader.dequeue()
-  D_loss = net.loss(input_batch=audio_batch,
-    # global_condition_batch=gc_id_batch,
-    l2_regularization_strength=args.l2_regularization_strength)
-  ###
-  # End WaveNet stuff
-  ###
-
-  G_loss = tf.reduce_mean(
-    tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.ones_like(D_logit_fake)))
-
-  # D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list=theta_D)
-  ### From WaveNet train.py:
-  # optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
-  #   epsilon=1e-4)
-  #
-  # optimizer = optimizer(
-  #   learning_rate=args.learning_rate,
-  #   momentum=args.momentum)
-  # trainable = tf.trainable_variables()
-  # optim = optimizer.minimize(loss, var_list=trainable)
-  ###
-  optimizer = tf.train.AdamOptimizer(
-    learning_rate=args.learning_rate,
-    epsilon=1e-4
-  )
-  trainable = tf.trainable_variables()
-
-  print("About to create D_solver")
-  D_solver = optimizer.minimize(D_loss, var_list=trainable)
-
-  print("About to create G_solver")
-  G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list=theta_G)
-
-  Z_dim = 100
-
-  # mnist = input_data.read_data_sets('../../MNIST_data', one_hot=True)
-
-  # if not os.path.exists('out/'):
-  #   os.makedirs('out/')
-
-  # coord = tf.train.Coordinator()
-  # audio_reader = create_audio_reader(args, coord)
-  #
-  # threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-  # audio_reader.start_threads(sess, 1)
-
-  i = 0
   for it in range(args.iters):
-    # X_mb, _ = mnist.train.next_batch(mb_size)
-    # X_mb = audio_reader.next_audio_batch()
+    for _ in range(5):
+      X_mb = audio_reader.next_audio_batch()#.reshape([1, total_sample_size])
+      if len(X_mb) < total_sample_size:
+        X_mb = np.pad(X_mb, ((0, total_sample_size - len(X_mb))), 'constant',
+            constant_values=0.)
+      X_mb = X_mb.reshape([1, total_sample_size])
+      #import pdb; pdb.set_trace()
 
-    # _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_dim)})
-    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
-    _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(args.batch_size, Z_dim)})
+      _, D_loss_curr, _ = sess.run([D_solver, D_loss, D_clip],
+          feed_dict={X: X_mb, Z: sample_Z(args.batch_size, Z_DIM)})
 
-    # if it % 1000 == 0:
-    print('Iter: {}'.format(it))
-    print('D loss: {:.4}'.format(D_loss_curr))
-    print('G_loss: {:.4}'.format(G_loss_curr))
-    print('\n')
+    _, G_loss_curr = sess.run([G_solver, G_loss],
+        feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+
+    if it % 10 == 0:
+      print('Iter: {}\nD_loss: {:.4}\nG_loss: {:.4}\n'.format(
+        it, D_loss_curr, G_loss_curr))
+      samples = sess.run([G_sample],
+          feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+      #import pdb; pdb.set_trace()
 
   audio_reader.done()
 
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 WAVENET_PARAMS = '../config/wavenet_params.json'
 # STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 SAMPLE_SIZE = 100000
