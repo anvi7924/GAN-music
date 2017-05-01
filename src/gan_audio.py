@@ -4,8 +4,6 @@ import json
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import os
 
 from gan_audio_reader import GanAudioReader, calculate_receptive_field
@@ -32,22 +30,6 @@ def generator(z, G_W1, G_b1, G_W2, G_b2):
 def discriminator(x, D_W1, D_b1, D_W2, D_b2):
   D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
   return tf.matmul(D_h1, D_W2) + D_b2
-
-
-def plot(samples):
-  fig = plt.figure(figsize=(4, 4))
-  gs = gridspec.GridSpec(4, 4)
-  gs.update(wspace=0.05, hspace=0.05)
-
-  for i, sample in enumerate(samples):
-    ax = plt.subplot(gs[i])
-    plt.axis('off')
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    ax.set_aspect('equal')
-    plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
-
-  return fig
 
 
 def create_wavenet(args, wavenet_params):
@@ -127,7 +109,7 @@ def main(args):
 
   for it in range(args.iters):
     for _ in range(5):
-      X_mb = audio_reader.next_audio_batch()#.reshape([1, total_sample_size])
+      X_mb = audio_reader.next_audio_batch()
       if len(X_mb) < total_sample_size:
         X_mb = np.pad(X_mb, ((0, total_sample_size - len(X_mb))), 'constant',
             constant_values=0.)
