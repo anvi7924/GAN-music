@@ -103,7 +103,7 @@ def main(args):
     if it % 10 == 0:
       print('Iter: {}\nD_loss: {:.4}\nG_loss: {:.4}\n'.format(
         it, D_loss_curr, G_loss_curr))
-      if it % 10 == 0:
+      if it % 200 == 0:
         samples, decoded = sess.run([G_sample, G_decode],
             feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
         with open('output_{}'.format(it), 'w') as f:
