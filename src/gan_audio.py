@@ -36,7 +36,7 @@ def discriminator(x, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3):
 
 def make_layer(in_dim, out_dim):
   W = tf.Variable(xavier_init([in_dim, out_dim]))
-  b = tf.Variable(tf.zeros(shape[out_dim]))
+  b = tf.Variable(tf.zeros(shape=[out_dim]))
   return W, b
 
 
