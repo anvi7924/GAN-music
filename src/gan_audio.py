@@ -101,8 +101,11 @@ def main(args):
     if it % 10 == 0:
       print('Iter: {}\nD_loss: {:.4}\nG_loss: {:.4}\n'.format(
         it, D_loss_curr, G_loss_curr))
-      samples = sess.run([G_sample],
-          feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+      if it % 200 == 0:
+        samples = sess.run([G_sample],
+            feed_dict={Z: sample_Z(args.batch_size, Z_DIM)})
+        with open('output_{}'.format(it), 'w') as f:
+          f.write(','.join(str(sample) for sample in samples[0][0]))
       #import pdb; pdb.set_trace()
 
   audio_reader.done()
