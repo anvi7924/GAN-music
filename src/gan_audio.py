@@ -18,18 +18,26 @@ def xavier_init(size):
 
 
 def sample_Z(m, n):
-  return np.random.uniform(-1., 1., size=[m, n])
+  return np.random.normal(size=(m, n))
 
 
-def generator(z, G_W1, G_b1, G_W2, G_b2):
+def generator(z, G_W1, G_b1, G_W2, G_b2, G_W3, G_b3):
   G_h1 = tf.nn.relu(tf.matmul(z, G_W1) + G_b1)
-  G_log_prob = tf.matmul(G_h1, G_W2) + G_b2
+  G_h2 = tf.nn.relu(tf.matmul(G_h1, G_W2) + G_b2)
+  G_log_prob = tf.matmul(G_h2, G_W3) + G_b3
   return tf.nn.sigmoid(G_log_prob)
 
 
-def discriminator(x, D_W1, D_b1, D_W2, D_b2):
+def discriminator(x, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3):
   D_h1 = tf.nn.relu(tf.matmul(x, D_W1) + D_b1)
-  return tf.matmul(D_h1, D_W2) + D_b2
+  D_h2 = tf.nn.relu(tf.matmul(D_h1, D_W2) + D_b2)
+  return tf.matmul(D_h2, D_W3) + D_b3
+
+
+def make_layer(in_dim, out_dim):
+  W = tf.Variable(xavier_init([in_dim, out_dim]))
+  b = tf.Variable(tf.zeros(shape[out_dim]))
+  return W, b
 
 
 def main(args):
@@ -43,27 +51,23 @@ def main(args):
 
   X = tf.placeholder(tf.float32, shape=[None, total_sample_size])
 
-  D_W1 = tf.Variable(xavier_init([total_sample_size, HIDDEN_DIM]))
-  D_b1 = tf.Variable(tf.zeros(shape=[HIDDEN_DIM]))
+  D_W1, D_b1 = make_layer(total_sample_size, HIDDEN_DIM)
+  D_W2, D_b2 = make_layer(HIDDEN_DIM, HIDDEN_DIM)
+  D_W3, D_b3 = make_layer(HIDDEN_DIM, 1)
 
-  D_W2 = tf.Variable(xavier_init([HIDDEN_DIM, 1]))
-  D_b2 = tf.Variable(tf.zeros(shape=[1]))
-
-  theta_D = [D_W1, D_W2, D_b1, D_b2]
+  theta_D = [D_W1, D_W2, D_W3, D_b1, D_b2, D_b3]
 
   Z = tf.placeholder(tf.float32, shape=[None, Z_DIM])
 
-  G_W1 = tf.Variable(xavier_init([Z_DIM, HIDDEN_DIM]))
-  G_b1 = tf.Variable(tf.zeros(shape=[HIDDEN_DIM]))
+  G_W1, G_b1 = make_layer(Z_DIM, HIDDEN_DIM)
+  G_W2, G_b2 = make_layer(HIDDEN_DIM, HIDDEN_DIM)
+  G_W3, G_b3 = make_layer(HIDDEN_DIM, total_sample_size)
 
-  G_W2 = tf.Variable(xavier_init([HIDDEN_DIM, total_sample_size]))
-  G_b2 = tf.Variable(tf.zeros(shape=[total_sample_size]))
+  theta_G = [G_W1, G_W2, G_W3, G_b1, G_b2, G_b3]
 
-  theta_G = [G_W1, G_W2, G_b1, G_b2]
-
-  G_sample = generator(Z, G_W1, G_b1, G_W2, G_b2)
-  D_real = discriminator(X, D_W1, D_b1, D_W2, D_b2)
-  D_fake = discriminator(G_sample, D_W1, D_b1, D_W2, D_b2)
+  G_sample = generator(Z, G_W1, G_b1, G_W2, G_b2, G_W3, G_b3)
+  D_real = discriminator(X, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3)
+  D_fake = discriminator(G_sample, D_W1, D_b1, D_W2, D_b2, D_W3, D_b3)
 
   D_loss = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
   G_loss = -tf.reduce_mean(D_fake)
