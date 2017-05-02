@@ -70,7 +70,8 @@ class RecGen():
     for i in range(time_steps - 1):
       canvases[i][0] = self.forward(canvases[i][1])
       canvases[i + 1][1] = self.backward(canvases[i][0])
-    self.sample = tf.add_n([ct for ct, _ in canvases[:time_steps - 1]])
+    self.sample = tf.nn.sigmoid(
+        tf.add_n([ct for ct, _ in canvases[:time_steps - 1]]))
 
 
   def forward(self, H_Ct):
@@ -173,7 +174,7 @@ def main(args):
   audio_reader.done()
 
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 5e-5
 WAVENET_PARAMS = '../config/wavenet_params.json'
 # STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 SAMPLE_SIZE = 100000
