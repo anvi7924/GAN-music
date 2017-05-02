@@ -118,14 +118,20 @@ def main(args):
   # Start WaveNet stuff
   ###
   sess = tf.Session()
-  sess.run(tf.global_variables_initializer())
 
   with open(args.wavenet_params, 'r') as f:
     wavenet_params = json.load(f)
 
+  print('Creating reader...')
   audio_reader = GanAudioReader(args, sess, wavenet_params)
+
+  print('Creating WaveNet...')
   net = create_wavenet(args, wavenet_params)
+
+  print('Initializing audio batch...')
   audio_batch = audio_reader.dequeue()
+
+  print('Initializing Discriminator loss function...')
   D_loss = net.loss(input_batch=audio_batch,
     # global_condition_batch=gc_id_batch,
     l2_regularization_strength=args.l2_regularization_strength)
@@ -133,6 +139,7 @@ def main(args):
   # End WaveNet stuff
   ###
 
+  print('Initializing Generator loss function...')
   G_loss = tf.reduce_mean(
     tf.nn.sigmoid_cross_entropy_with_logits(logits=D_logit_fake, labels=tf.ones_like(D_logit_fake)))
 
@@ -147,17 +154,22 @@ def main(args):
   # trainable = tf.trainable_variables()
   # optim = optimizer.minimize(loss, var_list=trainable)
   ###
+
+  print('Creating optimizer...')
   optimizer = tf.train.AdamOptimizer(
     learning_rate=args.learning_rate,
-    epsilon=1e-4
+    # epsilon=1e-4
+    epsilon=0.01
   )
   trainable = tf.trainable_variables()
 
-  print("About to create D_solver")
+  print("Creating D_solver...")
   D_solver = optimizer.minimize(D_loss, var_list=trainable)
 
-  print("About to create G_solver")
+  print("Creating G_solver...")
   G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list=theta_G)
+
+  sess.run(tf.global_variables_initializer())
 
   Z_dim = 100
 
@@ -195,7 +207,7 @@ WAVENET_PARAMS = '../config/wavenet_params.json'
 # STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
 SAMPLE_SIZE = 100000
 L2_REGULARIZATION_STRENGTH = 0
-SILENCE_THRESHOLD = 0.01
+SILENCE_THRESHOLD = None
 # EPSILON = 0.001
 MOMENTUM = 0.9
 # MAX_TO_KEEP = 5
