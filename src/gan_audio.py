@@ -38,20 +38,11 @@ def discriminator(x, D_W1, D_b1, D_W2, D_b2):
   return D_prob, D_logit
 
 
-def plot(samples):
-  fig = plt.figure(figsize=(4, 4))
-  gs = gridspec.GridSpec(4, 4)
-  gs.update(wspace=0.05, hspace=0.05)
-
-  for i, sample in enumerate(samples):
-    ax = plt.subplot(gs[i])
-    plt.axis('off')
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
-    ax.set_aspect('equal')
-    plt.imshow(sample.reshape(28, 28), cmap='Greys_r')
-
-  return fig
+# def plot(samples):
+#   for item in samples:
+#     for sample in item:
+#       item[i] *= 100
+#       i += 1
 
 
 def create_wavenet(args, wavenet_params):
@@ -186,6 +177,10 @@ def main(args):
 
   i = 0
   for it in range(args.iters):
+    samples = sess.run(G_sample, feed_dict={Z: sample_Z(15462, Z_dim)})
+    print(samples.size)
+    # for item in samples:
+    #   print(item.size)
     # X_mb, _ = mnist.train.next_batch(mb_size)
     # X_mb = audio_reader.next_audio_batch()
 
@@ -242,8 +237,7 @@ def parse_args():
          'and the end from the training set samples. Default: ' + str(SILENCE_THRESHOLD) + '.')
 
   args = parser.parse_args()
-
-  args.samples = args.file_seconds * args.sample_rate
+  args.samples = 2
   print('Extracting %s samples per file' % args.samples)
 
   return args
