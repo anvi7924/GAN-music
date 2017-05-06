@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
+import scipy.io.wavfile as wav
 
 from gan_audio_reader import GanAudioReader
 from wavenet.model import WaveNetModel
@@ -38,11 +39,12 @@ def discriminator(x, D_W1, D_b1, D_W2, D_b2):
   return D_prob, D_logit
 
 
-# def plot(samples):
-#   for item in samples:
-#     for sample in item:
-#       item[i] *= 100
-#       i += 1
+def scale(samples):
+  for item in samples:
+    i = 0
+    for sample in item:
+      item[i] =  int(item[i] * 100)
+      i += 1
 
 
 def create_wavenet(args, wavenet_params):
@@ -177,10 +179,14 @@ def main(args):
 
   i = 0
   for it in range(args.iters):
-    samples = sess.run(G_sample, feed_dict={Z: sample_Z(15462, Z_dim)})
-    print(samples.size)
-    # for item in samples:
-    #   print(item.size)
+    if it % 20 == 0:
+      samples = sess.run(G_sample, feed_dict={Z: sample_Z(15462, Z_dim)})
+      print(np.amax(samples))
+      # for item in samples:
+      #   print(item)
+      #scale(samples)
+      wav.write("../out/" + str(i) + ".wav", 1, samples)
+      i += 1
     # X_mb, _ = mnist.train.next_batch(mb_size)
     # X_mb = audio_reader.next_audio_batch()
 
